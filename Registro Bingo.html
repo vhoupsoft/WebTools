@@ -147,6 +147,28 @@
       outline: 2px solid #333;
       border: 2px solid #333;
     }
+    .history-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      min-height: 32px;
+      margin: 2px 4px;
+      padding: 0 8px;
+      font-size: 1.1em;
+      border-radius: 8px;
+      background: #f3f3f3;
+      border: 1px solid #e0e0e0;
+      font-weight: bold;
+      color: #222;
+      transition: background 0.2s, color 0.2s;
+    }
+    .history-num.inactive {
+      color: #888;
+      text-decoration: line-through;
+      background: #fafafa;
+      font-weight: normal;
+    }
     @media (max-width: 700px), (orientation: portrait) {
       #main {
         padding: 4px;
@@ -474,19 +496,16 @@
     let line = [];
     history.forEach((item, idx) => {
       let txt = item.num < 10 ? '0' + item.num : item.num.toString();
-      if (!item.active) {
-        txt = `<span style="color:#888;text-decoration:line-through;">${txt}</span>`;
-      } else {
-        txt = `<span style="font-weight:bold;color:#222;">${txt}</span>`;
-      }
+      let spanClass = 'history-num' + (item.active ? '' : ' inactive');
+      txt = `<span class="${spanClass}">${txt}</span>`;
       line.push(txt);
       if (line.length === 10) {
-        lines.push(line.join(' - '));
+        lines.push(line.join(' '));
         line = [];
       }
     });
     if (line.length > 0) {
-      lines.push(line.join(' - '));
+      lines.push(line.join(' '));
     }
     historyContent.innerHTML = lines.length ? lines.join('<br>') : '<em>No hay números marcados.</em>';
     modalHistory.style.display = 'flex';
