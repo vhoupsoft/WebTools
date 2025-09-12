@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sorteo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            text-align: center;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 24px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #resultado {
+            margin-top: 30px;
+            font-size: 80px;
+            font-weight: bold;
+            color: #333;
+            min-height: 100px; /* Para mantener el espacio */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #mensaje {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sorteo</h1>
+    <button id="sortearBtn">¡Presioná para Sortear!</button>
+    <div id="resultado"></div>
+    <div id="mensaje"></div>
+
+    <script>
+        const sortearBtn = document.getElementById('sortearBtn');
+        const resultadoDiv = document.getElementById('resultado');
+        const mensajeDiv = document.getElementById('mensaje');
+        let intervalo;
+
+        function iniciarSorteo() {
+            sortearBtn.disabled = true; // Deshabilita el botón mientras se ejecuta el sorteo
+            resultadoDiv.textContent = '';
+            mensajeDiv.textContent = 'Iniciando Sorteo...';
+
+            let contador = 0;
+            // Muestra A o B aleatoriamente cada 100ms
+            intervalo = setInterval(() => {
+                const letra = Math.random() < 0.5 ? 'A' : 'B';
+                resultadoDiv.textContent = letra;
+                contador++;
+                // Para el sorteo después de un tiempo, por ejemplo, 2.9 segundos (29 iteraciones de 100ms)
+                if (contador >= 29) { // Aproximadamente 2.9 segundos de animación
+                    clearInterval(intervalo);
+                    setTimeout(mostrarResultadoFinal, 100); // Pequeño retraso para que la última letra de la animación se vea
+                }
+            }, 100);
+        }
+
+        function mostrarResultadoFinal() {
+            // Genera la letra final aleatoria
+            const letraFinal = Math.random() < 0.5 ? 'A' : 'B';
+            resultadoDiv.textContent = letraFinal;
+            mensajeDiv.textContent = `¡El equipo ganador es ${letraFinal}!`;
+            sortearBtn.disabled = false; // Habilita el botón de nuevo
+        }
+
+        sortearBtn.addEventListener('click', iniciarSorteo);
+    </script>
+</body>
+</html>

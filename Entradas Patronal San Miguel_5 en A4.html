@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Generador de Entradas – A4 • 5 entradas • 2 troqueles (lado a lado)</title>
+  <style>
+    :root { --bg:#0b1020; --panel:#11182c; --text:#edf2ff; --muted:#b1b7c9; --accent:#74c0fc; --ok:#b2f2bb; --warn:#ffe066; --err:#ffa8a8; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial,sans-serif;line-height:1.35;padding:24px}
+    h1{font-size:1.6rem;margin:0 0 16px}
+    .app{max-width:1000px;margin:0 auto;display:grid;gap:16px}
+    .card{background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    form{display:grid;gap:12px;grid-template-columns:repeat(12,1fr);align-items:end}
+    label{font-size:.9rem;color:var(--muted);display:block;margin-bottom:6px}
+    input[type="number"],input[type="text"],input[type="date"],input[type="file"]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#0e1530;color:var(--text)}
+    .col-3{grid-column:span 3}.col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
+    .actions{display:flex;gap:10px;align-items:center}
+    button{border:none;padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:600;background:var(--accent);color:#0b1020}
+    .hint{color:var(--muted);font-size:.9rem}
+    .preview{font-family:ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap}
+    .ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}
+    .testbar{display:flex;gap:8px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <h1>Generador de Entradas • Fiesta Patronal San Miguel Arcángel</h1>
+      <form id="configForm">
+        <div class="col-3">
+          <label for="desde">Desde Nº</label>
+          <input id="desde" type="number" min="1" max="9999" value="1" required />
+        </div>
+        <div class="col-3">
+          <label for="hasta">Hasta Nº</label>
+          <input id="hasta" type="number" min="1" max="9999" value="50" required />
+        </div>
+        <div class="col-3">
+          <label for="hora">Hora</label>
+          <input id="hora" type="text" value="13:00hs" />
+        </div>
+
+        <div class="col-3">
+          <label for="precio_adulto">Importe Adultos</label>
+          <input id="precio_adulto" type="number" min="0" step="1" value="15000" />
+        </div>
+        <div class="col-3">
+          <label for="precio_nino">Importe Niños (hasta 10 años)</label>
+          <input id="precio_nino" type="number" min="0" step="1" value="10000" />
+        </div>
+
+        <div class="col-4">
+          <label for="fecha_impresa">Fecha impresa</label>
+          <input id="fecha_impresa" type="text" value="Domingo 28 de Septiembre de 2025" />
+        </div>
+        <div class="col-4">
+          <label for="fecha_picker">(Opcional) Elegir fecha</label>
+          <input id="fecha_picker" type="date" value="2025-09-28" />
+        </div>
+        <div class="col-4">
+          <label for="imgFile">Imagen San Miguel (opcional)</label>
+          <input id="imgFile" type="file" accept="image/*" />
+        </div>
+        <div class="col-8 actions" style="margin-top:6px;">
+          <button type="submit">Generar PDF FINAL</button>
+          <span class="hint">A4 vertical • 5 entradas/hoja • 2 troqueles (lado a lado, 1.5×)</span>
+        </div>
+        <div class="col-4 actions" style="justify-content:flex-end;margin-top:6px;">
+          <button type="button" id="btnCheckJsPDF">Diagnosticar jsPDF</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <strong>Casos de Prueba</strong>
+      <div class="testbar" style="margin-top:10px;">
+        <button id="t1" type="button">Prueba 1–50 (intercalado)</button>
+        <button id="t2" type="button">Prueba 101–136</button>
+        <button id="t6" type="button">Render demo (1–5)</button>
+      </div>
+    </div>
+
+    <div id="status" class="card preview" aria-live="polite"></div>
+  </div>
+
+  <script>
+    // ---------- Utils ----------
+    const $ = s => document.querySelector(s);
+    const statusEl = $('#status');
+    const pad2 = n => String(Math.max(0, n|0)).padStart(2,'0');
+    const pad4 = n => String(Math.max(0, n|0)).padStart(4,'0');
+    const fmtRango = (d,h)=>`Nº ${pad4(d)} → Nº ${pad4(h)} (total ${(h-d+1)})`;
+
+    function fechaEsp(d){ if(!d) return ''; const dt=(d instanceof Date)?d:new Date(d);
+      const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+      return `${cap(dt.toLocaleDateString('es-AR',{weekday:'long'}))} ${dt.getDate()} de ${cap(dt.toLocaleDateString('es-AR',{month:'long'}))} de ${dt.getFullYear()}` }
+    function dateFromLocalISO(iso){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso)); if(!m) return null; return new Date(+m[1],+m[2]-1,+m[3]); }
+    function formatDDMMYY(d){ return `${pad2(d.getDate())}-${pad2(d.getMonth()+1)}-${String(d.getFullYear()).slice(-2)}`; }
+    function parseFechaLargaToDate(str){
+      if(!str) return null;
+      const meses={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
+      const m=/(?:\w+\s+)?(\d{1,2})\s+de\s+([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+de\s+(\d{4})/.exec(str);
+      if(!m) return null; const mes=meses[m[2].toLowerCase()]; if(!mes) return null; return new Date(+m[3],mes-1,+m[1]);
+    }
+    function logOk(m){statusEl.innerHTML=`<span class="ok">${m}</span>`}
+    function logWarn(m){statusEl.innerHTML=`<span class="warn">${m}</span>`}
+    function logErr(m){statusEl.innerHTML=`<span class="err">${m}</span>`}
+
+    // ---------- jsPDF loader ----------
+    function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.async=true;s.onload=res;s.onerror=()=>rej(new Error('No se pudo cargar: '+src));document.head.appendChild(s);});}
+    async function ensureJsPDF(){let ctor=window.jspdf?.jsPDF;if(ctor) return ctor;
+      const cdns=['https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js','https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js'];
+      for(const url of cdns){try{await loadScript(url); ctor=window.jspdf?.jsPDF; if(ctor) return ctor;}catch(e){console.warn(e.message)}}
+      throw new Error('jsPDF no está disponible.');
+    }
+
+    // ---------- Imagen ----------
+    let embeddedImgDataUrl=null;
+    $('#imgFile').addEventListener('change',(e)=>{
+      const f=e.target.files?.[0]; if(!f){embeddedImgDataUrl=null;return;}
+      const r=new FileReader(); r.onload=()=>embeddedImgDataUrl=r.result; r.onerror=()=>embeddedImgDataUrl=null; r.readAsDataURL(f);
+    });
+
+    // ---------- Geometría ----------
+    const A4={w:210,h:297};
+    const M={top:10,left:10,right:10,bottom:10};
+    const usable={w:A4.w-M.left-M.right,h:A4.h-M.top-M.bottom};
+    const TICKETS_PER_PAGE=5;
+    const ticketH=usable.h/TICKETS_PER_PAGE; // ~55.4mm
+    const ticketW=usable.w;
+
+    const colLeftW=24; // CONTROL GENERAL
+
+    // Troqueles a la derecha: 2 columnas, cada una 1.5× más ancha que antes
+    const TROQUEL_LABELS=['POSTRE','ENTRADA'];
+    const TROQUEL_COL_W=18.75; // 12.5 × 1.5
+    const colRightW=TROQUEL_COL_W * TROQUEL_LABELS.length;
+
+    // Cuerpo principal se achica acorde
+    const colMainW=ticketW - colLeftW - colRightW;
+
+    const LINE_WIDTH=0.1, LINE_COLOR=[154,162,177];
+    function drawCutRect(doc,x,y,w,h){doc.setDrawColor(...LINE_COLOR);doc.setLineWidth(LINE_WIDTH);doc.rect(x,y,w,h);}
+    function centerText(doc,t,cx,cy,size=12,font='times',style='bold'){doc.setFont(font,style);doc.setFontSize(size);const w=doc.getTextWidth(t);doc.text(t,cx-w/2,cy);}
+    function drawRightText(doc,t,xr,y,size=11,style='normal'){doc.setFont('times',style);doc.setFontSize(size);const w=doc.getTextWidth(t);doc.text(t,xr-w,y);}
+    function drawNumberAndDate(doc,numText,fechaCorta,x,y){doc.setFont('times','bold');doc.setFontSize(11);doc.text(numText,x,y);doc.setFont('times','normal');doc.setFontSize(9);doc.text(fechaCorta,x,y+5);}
+
+    function drawWrapped(doc, text, x, y, w, size=9, style='normal', gap=0.85){
+      doc.setFont('times',style); doc.setFontSize(size);
+      const lines=doc.splitTextToSize(text,w);
+      for(const ln of lines){doc.text(ln,x,y); y+=size*gap;}
+      return y;
+    }
+
+    function centerMixedText(doc, boldText, normalText, cx, y, boldSize=10.5, normalSize=10){
+      doc.setFont('times','bold'); doc.setFontSize(boldSize);
+      const wBold = doc.getTextWidth(boldText);
+      doc.setFont('times','normal'); doc.setFontSize(normalSize);
+      const wNorm = normalText ? doc.getTextWidth(normalText) : 0;
+      const total = wBold + wNorm;
+      let x = cx - total/2;
+      doc.setFont('times','bold'); doc.setFontSize(boldSize); doc.text(boldText, x, y);
+      x += wBold;
+      if (normalText){ doc.setFont('times','normal'); doc.setFontSize(normalSize); doc.text(normalText, x, y); }
+    }
+
+    function drawVerticalCentered(doc, text, cx, y, size=10.5, style='bold'){
+      doc.setFont('times',style); doc.setFontSize(size);
+      doc.text(text, cx, y, {angle:90, align:'center'});
+    }
+
+    function drawTicket(doc, baseX, baseY, numText, fechaLarga, fechaCorta, hora, precioAdulto, precioNino){
+      drawCutRect(doc, baseX, baseY, ticketW, ticketH);
+      const leftX=baseX, mainX=baseX+colLeftW, rightX=baseX+colLeftW+colMainW;
+
+      // Izquierda
+      drawCutRect(doc, leftX, baseY, colLeftW, ticketH);
+      centerText(doc,'CONTROL',leftX+colLeftW/2,baseY+14.5,10,'times','bold');
+      centerText(doc,'GENERAL',leftX+colLeftW/2,baseY+20,10,'times','bold');
+      // Casillas en líneas separadas
+      doc.setFont('times','normal'); doc.setFontSize(9);
+      doc.text('[ ] Adulto', leftX+4, baseY+27.5);
+      doc.text('[ ] Niño',   leftX+4, baseY+31.5);
+      drawNumberAndDate(doc,numText,fechaCorta,leftX+5,baseY+40);
+
+      // Cuerpo
+      drawCutRect(doc, mainX, baseY, colMainW, ticketH);
+
+      // Marca de agua (tenue)
+      if(embeddedImgDataUrl){
+        try{
+          const g=doc.GState?new doc.GState({opacity:0.11}):null; if(g) doc.setGState(g);
+          const mw=Math.min(colMainW*0.55,78), mh=mw*1.05;
+          const mx=mainX+colMainW-mw-5, my=baseY+(ticketH-mh)/2;
+          try{doc.addImage(embeddedImgDataUrl,'JPEG',mx,my,mw,mh);}catch{try{doc.addImage(embeddedImgDataUrl,'PNG',mx,my,mw,mh);}catch{}}
+          if(g) doc.setGState(new doc.GState({opacity:1}));
+        }catch{}
+      }
+
+      // Encabezados
+      centerText(doc,'Parroquia “San Miguel Arcángel”', mainX+colMainW/2, baseY+8.5, 12,'times','bold');
+      centerText(doc, 'Fiesta Patronal',               mainX+colMainW/2, baseY+15.5, 15.5, 'times','italic');
+      drawRightText(doc, numText, mainX+colMainW-3.5, baseY+15.5, 11, 'bold');
+      centerText(doc, fechaLarga, mainX+colMainW/2, baseY+21.5, 10, 'times','bold');
+      centerMixedText(doc, `Almuerzo Comunitario, ${hora}`, ` – Incluye 1 cartón de Bingo`, mainX+colMainW/2, baseY+26.8, 10.5, 10);
+
+      // Cuerpo textos (centrados visualmente dentro del cuerpo)
+      // Ajuste: márgenes izquierdo/derecho simétricos, y arranque más alto para no invadir la siguiente etiqueta
+      const padL=14, padR=14;
+      const textX=mainX+padL, textW=colMainW-padL-padR;
+      let y = baseY + 29.8;  // más arriba para ganar espacio vertical
+
+      // 1) Menú (corrida a la derecha -> ya lo logramos con padL mayor)
+      y = drawWrapped(doc, 'Habrá Entrada, Plato Principal y Postre (La bebida se venderá aparte)', textX+6, y+2, textW, 9, 'normal', 0.75);
+
+      // 2) Precios (una sola línea si entra; si no, envuelve con interlineado compacto)
+      const lineaPrecios = `[ ] Tarjeta Adultos: $${Number(precioAdulto||0).toLocaleString('es-AR')}.-
+[ ] Tarjeta Niños(hasta 10 años): $${Number(precioNino||0).toLocaleString('es-AR')}.-
+`.replace('\n','   ');
+      y = drawWrapped(doc, lineaPrecios, textX, y+2, textW, 9.2, 'bold', 0.75);
+
+      // 3) Dirección (SUBIDA)
+      y = drawWrapped(doc, 'Salón Parroquial – Francisco Vidal 7259', textX+20, y-2, textW, 8.8, 'normal', 0.75);
+
+      // Derecha: 2 troqueles en columnas (lado a lado) — centrado vertical y horizontal dentro de cada recuadro
+      drawCutRect(doc, rightX, baseY, colRightW, ticketH);
+      for(let i=0;i<TROQUEL_LABELS.length;i++){
+        const ix = rightX + i*TROQUEL_COL_W;
+        drawCutRect(doc, ix, baseY, TROQUEL_COL_W, ticketH);
+
+        const cx = ix + TROQUEL_COL_W/2;
+        drawVerticalCentered(doc, TROQUEL_LABELS[i], cx+10, baseY+ticketH/2-3, 10.5, 'bold');
+        // Nº y fecha bien adentro del recuadro
+        doc.setFont('times','bold'); doc.setFontSize(10);
+        doc.text(numText, cx+2, baseY + ticketH - 16, {angle:90, align:'center'});
+        doc.setFont('times','normal'); doc.setFontSize(9);
+        doc.text(fechaCorta, cx+11, baseY + ticketH - 4, {angle:90, align:'center'});
+      }
+    }
+
+    // ---------- Numeración intercalada (salto de 10 por hoja) ----------
+    async function renderPDFFinal(desde,hasta,fechaLarga,fechaCorta,hora,precioAdulto,precioNino){
+      const jsPDFctor=await ensureJsPDF();
+      const doc=new jsPDFctor({unit:'mm',format:'a4',orientation:'portrait'});
+      doc.setProperties({title:'Entradas – San Miguel Arcángel'});
+
+      const startX=M.left, startY=M.top;
+      const total = Math.max(0, hasta - desde + 1);
+      const paginas = Math.min(10, total); // hasta 10 offsets (1..10).
+
+      for(let offset=0; offset<paginas; offset++){
+        if(offset>0) doc.addPage();
+        for(let i=0;i<TICKETS_PER_PAGE;i++){
+          const n = desde + offset + (i*10); // 1,11,21... || 2,12,22...
+          if(n>hasta) continue;
+          const numText=`Nº ${pad4(n)}`;
+          const y = startY + (i * (usable.h/TICKETS_PER_PAGE));
+          drawTicket(doc,startX,y,numText,fechaLarga,fechaCorta,hora,precioAdulto,precioNino);
+        }
+      }
+
+      const url=doc.output('bloburl');
+      const win=window.open(url,'_blank'); if(!win) logWarn('Permití pop-ups para ver el PDF.');
+    }
+
+    // ---------- Form + tests ----------
+    $('#fecha_picker').addEventListener('change',(e)=>{const dt=dateFromLocalISO(e.target.value); if(dt) $('#fecha_impresa').value=fechaEsp(dt);});
+    $('#configForm').addEventListener('submit',async (e)=>{
+      e.preventDefault();
+      const desde=+$('#desde').value, hasta=+$('#hasta').value, hora=$('#hora').value.trim()||'13:00hs';
+      const precioAdulto=+$('#precio_adulto').value||0, precioNino=+$('#precio_nino').value||0;
+      const fechaLarga=$('#fecha_impresa').value.trim();
+      let fechaCorta='', iso=$('#fecha_picker').value; if(iso){const dt=dateFromLocalISO(iso); if(dt) fechaCorta=formatDDMMYY(dt);}
+      if(!fechaCorta){const d=parseFechaLargaToDate(fechaLarga); if(d) fechaCorta=formatDDMMYY(d);}
+      const errs=[]; if(!Number.isFinite(desde)||!Number.isFinite(hasta)) errs.push('• Números inválidos.');
+      if(desde<1||hasta<1||desde>9999||hasta>9999) errs.push('• Rango 1..9999.');
+      if(hasta<desde) errs.push('• "Hasta" no puede ser menor que "Desde".');
+      if(!fechaLarga) errs.push('• Falta fecha impresa.'); if(!fechaCorta) errs.push('• No deduzco fecha corta.');
+      if(errs.length){logErr(errs.join('\n'));return;}
+      logOk(`Generando (intercalado)… ${fmtRango(desde,hasta)} | ${fechaLarga} | ${fechaCorta} | ${hora} | $Adulto=${precioAdulto} / $Niño=${precioNino}`);
+      try{await renderPDFFinal(desde,hasta,fechaLarga,fechaCorta,hora,precioAdulto,precioNino);}catch(e2){logErr('Error: '+(e2?.message||e2));}
+    });
+
+    // Pruebas rápidas
+    $('#t1').addEventListener('click',()=>{$('#desde').value=1;$('#hasta').value=50;$('#hora').value='13:00hs';$('#precio_adulto').value=15000;$('#precio_nino').value=10000;$('#fecha_impresa').value='Domingo 28 de Septiembre de 2025';$('#fecha_picker').value='2025-09-28';$('#fecha_picker').dispatchEvent(new Event('change'));logOk('1–50 intercalado listo.');});
+    $('#t2').addEventListener('click',()=>{$('#desde').value=101;$('#hasta').value=136;$('#hora').value='13:00hs';$('#precio_adulto').value=15000;$('#precio_nino').value=10000;$('#fecha_impresa').value='Domingo 28 de Septiembre de 2025';$('#fecha_picker').value='2025-09-28';$('#fecha_picker').dispatchEvent(new Event('change'));logOk('101–136 intercalado.');});
+    $('#t6').addEventListener('click',async()=>{$('#desde').value=1;$('#hasta').value=5;$('#fecha_impresa').value='Domingo 28 de Septiembre de 2025';$('#fecha_picker').value='2025-09-28';$('#fecha_picker').dispatchEvent(new Event('change'));try{await renderPDFFinal(1,5,$('#fecha_impresa').value,'28-09-25','13:00hs',15000,10000);}catch(e){logErr('Demo falló: '+e.message);}});
+  </script>
+</body>
+</html>

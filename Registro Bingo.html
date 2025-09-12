@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Regisro de Bingo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+      background: #f8f8f8;
+    }
+    body {
+      height: 100vh;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    #main {
+      flex: 1 1 0%;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      padding: 10px;
+      min-height: 0;
+    }
+    #grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      grid-template-rows: repeat(10, 1fr);
+      gap: 6px;
+      height: 100%;
+      min-height: 0;
+    }
+    .cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.2vw;
+      min-height: 40px;
+      min-width: 40px;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: background 0.2s, color 0.2s, font-size 0.2s;
+      user-select: none;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+    }
+    .cell.unmarked {
+      color: var(--unmarked-color, #888);
+      font-weight: normal;
+    }
+    .cell.marked {
+      color: var(--marked-color, #176c2a);
+      font-weight: bold;
+      font-size: 2.7vw;
+      background: #eafbe7;
+    }
+    .cell.highlighted {
+      box-shadow: 0 0 0 3px #2ecc40;
+      z-index: 1;
+    }
+    #controls {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: #f0f0f0;
+      padding: 8px 0;
+      gap: 8px;
+      min-height: 60px;
+    }
+    #controls-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    #numberInput {
+      font-size: 1.2em;
+      width: 70px;
+      text-align: center;
+      padding: 4px;
+    }
+    #multiInput.invalid {
+      background: #ffeaea;
+      border: 2px solid #a00;
+      color: #a00;
+    }
+    #multiInput {
+      font-size: 1.1em;
+      width: 220px;
+      padding: 4px;
+      margin-right: 8px;
+      border-radius: 6px;
+      border: 1px solid #bbb;
+      transition: border 0.2s, background 0.2s, color 0.2s;
+    }
+    button {
+      font-size: 1em;
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    #toggleBtn {
+      background: #e0e0e0;
+      color: #333;
+    }
+    #clearBtn {
+      background: #ffeaea;
+      color: #a00;
+    }
+    #clearMultiBtn {
+      background: #e0e0e0;
+      color: #333;
+    }
+    #colorBtns {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 2px;
+    }
+    .color-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid #bbb;
+      cursor: pointer;
+      display: inline-block;
+      margin-right: 2px;
+      transition: border 0.2s;
+    }
+    .color-btn.unmarked {
+      background: var(--unmarked-color, #888);
+    }
+    .color-btn.marked {
+      background: var(--marked-color, #176c2a);
+    }
+    .color-btn:focus {
+      outline: 2px solid #333;
+      border: 2px solid #333;
+    }
+    @media (max-width: 700px), (orientation: portrait) {
+      #main {
+        padding: 4px;
+      }
+      #grid {
+        gap: 3px;
+      }
+      .cell {
+        font-size: 5vw;
+        min-height: 28px;
+        min-width: 28px;
+      }
+      .cell.marked {
+        font-size: 6vw;
+      }
+      #controls-row {
+        flex-direction: column;
+        gap: 4px;
+      }
+      #colorBtns {
+        flex-direction: column;
+        gap: 4px;
+      }
+      #numberInput {
+        font-size: 1em;
+        width: 50px;
+      }
+      #multiInput {
+        width: 120px;
+        font-size: 1em;
+      }
+    }
+    @media (max-width: 900px) and (orientation: landscape) {
+      #main {
+        padding: 2px;
+      }
+      .cell {
+        font-size: 3vw;
+        min-height: 22px;
+        min-width: 22px;
+      }
+      .cell.marked {
+        font-size: 4vw;
+      }
+      #controls-row {
+        flex-direction: row;
+        gap: 6px;
+      }
+      #colorBtns {
+        flex-direction: row;
+        gap: 6px;
+      }
+    }
+    @media (orientation: landscape) and (max-width: 900px), (orientation: landscape) and (max-height: 600px) {
+      #controls {
+        flex-direction: row !important;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 12px;
+      }
+      #controls-row {
+        flex-direction: row !important;
+        gap: 8px;
+        margin-bottom: 0;
+      }
+      #colorBtns {
+        flex-direction: row !important;
+        gap: 8px;
+        margin-top: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="main">
+    <div id="grid"></div>
+  </div>
+  <div id="controls">
+    <div id="controls-row">
+      <input type="text" id="numberInput" maxlength="2" placeholder="N°" autocomplete="off">
+      <button id="toggleBtn">Marcar/Desmarcar</button>
+      <button id="clearBtn">Desmarcar todos</button>
+      <button class="color-btn unmarked" id="unmarkedColorBtn" title="Cambiar color desmarcado"></button>
+      <button class="color-btn marked" id="markedColorBtn" title="Cambiar color marcado"></button>
+      <input type="text" id="multiInput" placeholder="Números separados por coma" autocomplete="off">
+      <button id="clearMultiBtn">Limpiar</button>
+      <button id="showHistoryBtn">Ver historial</button>
+    </div>
+    <div id="modalHistory" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); z-index:1000; align-items:center; justify-content:center;">
+      <div style="background:#fff; padding:24px; border-radius:12px; max-width:90vw; max-height:80vh; overflow:auto; box-shadow:0 4px 24px #0003;">
+        <h2>Historial de números marcados</h2>
+        <div id="historyContent" style="font-size:1.3em; line-height:2;"></div>
+        <button id="closeHistoryBtn" style="margin-top:16px; font-size:1em;">Cerrar</button>
+      </div>
+    </div>
+  </div>
+  <script>
+  // Generar la grilla
+  const grid = document.getElementById('grid');
+  const cells = [];
+  for (let row = 0; row < 10; row++) {
+    for (let col = 0; col < 9; col++) {
+      const cell = document.createElement('div');
+      cell.classList.add('cell', 'unmarked');
+      let num;
+      if (col === 0 && row === 0) {
+        // Primer columna, primera fila: 90
+        cell.textContent = '90';
+        cell.dataset.num = '90';
+      } else if (col === 0) {
+        // Primer columna: 01-09
+        num = row;
+        let displayNum = num < 10 ? '0' + num : num.toString();
+        cell.textContent = displayNum;
+        cell.dataset.num = num;
+      } else {
+        // Otras columnas: decenas arriba, luego unidades
+        num = col * 10 + row;
+        let displayNum = num < 10 ? '0' + num : num.toString();
+        cell.textContent = displayNum;
+        cell.dataset.num = num;
+      }
+      cell.addEventListener('click', () => toggleCell(cell));
+      grid.appendChild(cell);
+      cells.push(cell);
+    }
+  }
+
+  // Marcar/desmarcar celda
+  function toggleCell(cell) {
+    if (!cell.dataset.num) return;
+    const num = parseInt(cell.dataset.num, 10);
+    const wasMarked = cell.classList.contains('marked');
+    cell.classList.toggle('marked');
+    cell.classList.toggle('unmarked');
+    if (cell.classList.contains('marked')) {
+      addToHistory(num);
+    } else {
+      removeFromHistory(num);
+    }
+    // Control general si la caja multiInput tiene contenido
+    if (multiInput.value.trim()) {
+      procesarMultiInput();
+    }
+  }
+
+  // Buscar celda por número
+  function getCellByNumber(n) {
+    n = parseInt(n, 10);
+    if (isNaN(n) || n < 1 || n > 90) return null;
+    return cells.find(c => parseInt(c.dataset.num, 10) === n);
+  }
+
+  // Control de input y botones
+  const numberInput = document.getElementById('numberInput');
+  const toggleBtn = document.getElementById('toggleBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const multiInput = document.getElementById('multiInput');
+  const clearMultiBtn = document.getElementById('clearMultiBtn');
+
+  function toggleNumber() {
+    const val = numberInput.value.trim();
+    const n = parseInt(val, 10);
+    const cell = getCellByNumber(n);
+    if (cell) toggleCell(cell);
+    numberInput.value = '';
+    numberInput.focus();
+  }
+
+  toggleBtn.onclick = toggleNumber;
+  numberInput.onkeydown = function(e) {
+    if (e.key === 'Enter') {
+      toggleNumber();
+      e.preventDefault();
+    }
+  };
+
+  clearBtn.onclick = function() {
+    cells.forEach(cell => {
+      if (cell.classList.contains('marked')) {
+        cell.classList.remove('marked');
+        cell.classList.add('unmarked');
+      }
+    });
+    numberInput.value = '';
+    numberInput.focus();
+    clearHistory();
+  };
+
+  // Color picker para marcado/desmarcado
+  function pickColor(defaultColor, callback) {
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = defaultColor;
+    input.style.position = 'absolute';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    input.click();
+    input.oninput = function() {
+      callback(input.value);
+      document.body.removeChild(input);
+    };
+    input.onblur = function() {
+      document.body.removeChild(input);
+    };
+  }
+
+  const unmarkedColorBtn = document.getElementById('unmarkedColorBtn');
+  const markedColorBtn = document.getElementById('markedColorBtn');
+
+  function setUnmarkedColor(color) {
+    document.documentElement.style.setProperty('--unmarked-color', color);
+    unmarkedColorBtn.style.background = color;
+  }
+  function setMarkedColor(color) {
+    document.documentElement.style.setProperty('--marked-color', color);
+    markedColorBtn.style.background = color;
+  }
+
+  // Inicializar colores
+  setUnmarkedColor('#888');
+  setMarkedColor('#176c2a');
+
+  // Permitir seleccionar color desde los botones circulares
+  unmarkedColorBtn.onclick = function() {
+    const current = getComputedStyle(document.documentElement).getPropertyValue('--unmarked-color').trim() || '#888';
+    pickColor(current, setUnmarkedColor);
+  };
+  markedColorBtn.onclick = function() {
+    const current = getComputedStyle(document.documentElement).getPropertyValue('--marked-color').trim() || '#176c2a';
+    pickColor(current, setMarkedColor);
+  };
+
+  // --- NUEVA FUNCIONALIDAD MULTIINPUT ---
+  function limpiarHighlights() {
+    cells.forEach(cell => cell.classList.remove('highlighted'));
+  }
+
+  function procesarMultiInput() {
+    limpiarHighlights();
+    const val = multiInput.value.trim();
+    if (!val) {
+      multiInput.classList.remove('invalid');
+      return;
+    }
+    let error = false;
+    // Separar por coma, punto o espacio
+    const parts = val.split(/[\s,\.]+/);
+    parts.forEach(part => {
+      const num = parseInt(part.trim(), 10);
+      if (!isNaN(num) && num >= 1 && num <= 90) {
+        const cell = getCellByNumber(num);
+        if (cell && cell.classList.contains('marked')) {
+          cell.classList.add('highlighted');
+        } else {
+          error = true;
+        }
+      } else if (part.trim() !== '') {
+        error = true;
+      }
+    });
+    if (error) {
+      multiInput.classList.add('invalid');
+    } else {
+      multiInput.classList.remove('invalid');
+    }
+  }
+
+  multiInput.addEventListener('input', procesarMultiInput);
+
+  clearMultiBtn.onclick = function() {
+    multiInput.value = '';
+    multiInput.classList.remove('invalid');
+    limpiarHighlights();
+    multiInput.focus();
+  };
+
+  // --- REGISTRO DE HISTORIAL ---
+  let history = []; // [{num: N, active: true/false}]
+
+  function addToHistory(num) {
+    num = parseInt(num, 10);
+    if (isNaN(num) || num < 1 || num > 90) return;
+    history.push({num, active: true});
+  }
+
+  function removeFromHistory(num) {
+    num = parseInt(num, 10);
+    if (isNaN(num) || num < 1 || num > 90) return;
+    // Buscar la última aparición activa y tacharla
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].num === num && history[i].active) {
+        history[i].active = false;
+        break;
+      }
+    }
+  }
+
+  function clearHistory() {
+    history = [];
+  }
+
+  // --- MODIFICAR clearBtn PARA LIMPIAR HISTORIAL ---
+  clearBtn.onclick = function() {
+    cells.forEach(cell => {
+      if (cell.classList.contains('marked')) {
+        cell.classList.remove('marked');
+        cell.classList.add('unmarked');
+      }
+    });
+    numberInput.value = '';
+    numberInput.focus();
+    clearHistory();
+  };
+
+  // --- MODAL DE HISTORIAL ---
+  const showHistoryBtn = document.getElementById('showHistoryBtn');
+  const modalHistory = document.getElementById('modalHistory');
+  const historyContent = document.getElementById('historyContent');
+  const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+
+  showHistoryBtn.onclick = function() {
+    // Mostrar historial, 10 por línea, tachados si corresponde
+    let lines = [];
+    let line = [];
+    history.forEach((item, idx) => {
+      let txt = item.num < 10 ? '0' + item.num : item.num.toString();
+      if (!item.active) {
+        txt = `<span style="color:#888;text-decoration:line-through;">${txt}</span>`;
+      } else {
+        txt = `<span style="font-weight:bold;color:#222;">${txt}</span>`;
+      }
+      line.push(txt);
+      if (line.length === 10) {
+        lines.push(line.join(' - '));
+        line = [];
+      }
+    });
+    if (line.length > 0) {
+      lines.push(line.join(' - '));
+    }
+    historyContent.innerHTML = lines.length ? lines.join('<br>') : '<em>No hay números marcados.</em>';
+    modalHistory.style.display = 'flex';
+  };
+
+  closeHistoryBtn.onclick = function() {
+    modalHistory.style.display = 'none';
+  };
+
+  // Cerrar modal al hacer clic fuera del contenido
+  window.onclick = function(event) {
+    if (event.target === modalHistory) {
+      modalHistory.style.display = 'none';
+    }
+  };
+  </script>
+</body>
+</html>

@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Generador de Entradas – A4 • Cuerpo Entrada • Control General</title>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 16px; }
+    h1 { margin-top: 0; }
+    form#configForm { display: grid; grid-template-columns: repeat(4, minmax(250px,1fr)); gap: 8px 16px; align-items: center; }
+    form#configForm > * { margin: 2px 0; }
+    form#configForm button { grid-column: span 2; height: 36px; }
+    small.hint { grid-column: 1 / -1; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Generador de Entradas – Variante 4 por hoja</h1>
+
+  <form id="configForm">
+    <label>Desde Nº <input id="desde" type="number" value="1" min="1" max="999999" /></label>
+    <label>Hasta Nº <input id="hasta" type="number" value="40" min="1" max="999999" /></label>
+    <label>Hora <input id="hora" type="text" value="12:30hs" /></label>
+    <label>Fecha del evento <input id="fecha_evento" type="date" value="2025-09-28" /></label>
+
+    <label>Precio Adultos <input id="precio_adulto" type="number" value="15000" /></label>
+    <label>Precio Niños <input id="precio_nino" type="number" value="10000" /></label>
+
+    <!-- NUEVO: modo de numeración -->
+    <label>Numeración
+      <select id="modoNumeracion">
+        <option value="secuencial" selected>Secuencial</option>
+        <option value="grupos">Por hojas (grupos)</option>
+      </select>
+    </label>
+    <label id="lblGrupo" style="display:none;">Agrupar de a
+      <input id="tamanoGrupo" type="number" value="10" min="2" max="9999" />
+    </label>
+
+    <label>Imagen (logo / foto)
+      <input id="imagen" type="file" accept="image/*" />
+    </label>
+    <div></div>
+
+    <button type="submit">Generar PDF FINAL</button>
+    <button type="button" id="btnSinNumeracion">Generar HOJA sin numeración</button>
+
+    <small class="hint">La imagen se inserta a la izquierda del cuerpo y también como marca de agua con transparencia.</small>
+  </form>
+
+  <script>
+    const { jsPDF } = window.jspdf;
+
+    // Tamaño A4 en mm
+    const A4 = { w:210, h:297 };
+    const M = { top:10, left:10, right:10, bottom:10 };
+    const usable = { w:A4.w-M.left-M.right, h:A4.h-M.top-M.bottom };
+
+    // 4 entradas por hoja
+    const TICKETS_PER_PAGE = 4;
+    const ticketH = usable.h/TICKETS_PER_PAGE;
+    const ticketW = usable.w;
+    const colLeftW = 35; // Columna de "Control General" (más ancha)
+    const colMainW = ticketW - colLeftW;
+
+    // Imagen cargada por el usuario (dataURL)
+    let imgData = null;
+    let imgMeta = { w:0, h:0, type:"PNG" }; // type "PNG"/"JPEG"
+
+    // Helpers
+    function pad4(n){ return String(n).padStart(4,'0'); }
+
+    function parseISODateLocal(iso){
+      if(!iso) return null;
+      const [y,m,d] = iso.split('-').map(Number);
+      return new Date(y, m-1, d, 12, 0, 0, 0);
+    }
+    function formatFechaCorta(d){
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yyyy = String(d.getFullYear());
+      return `${dd}-${mm}-${yyyy}`;
+    }
+    function formatFechaLarga(d){
+      const dias = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+      const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+      const dd = String(d.getDate()).padStart(2,'0');
+      const dia = dias[d.getDay()];
+      const mes = meses[d.getMonth()];
+      const yyyy = d.getFullYear();
+      return `${dia} ${dd} de ${mes} de ${yyyy}`;
+    }
+
+    function getImageTypeFromDataURL(dataURL){
+      if(!dataURL) return "PNG";
+      if(dataURL.startsWith("data:image/jpeg") || dataURL.startsWith("data:image/jpg")) return "JPEG";
+      if(dataURL.startsWith("data:image/webp")) return "WEBP";
+      return "PNG";
+    }
+    function fitInside(imgW, imgH, maxW, maxH){
+      if(imgW <= 0 || imgH <= 0) return { w:0, h:0 };
+      const r = Math.min(maxW / imgW, maxH / imgH);
+      return { w: imgW * r, h: imgH * r };
+    }
+
+    // Casilla de verificación como vector
+    function drawCheckbox(doc, x, y, size = 3.5) {
+      const yBox = y - size + 2.2;
+      doc.rect(x, yBox, size, size);
+    }
+
+//Formatear importe
+function formatARS(value){
+  if (isNaN(value)) return "";
+  return "$" + value.toLocaleString("es-AR") + ",-";
+}
+    // Leer imagen seleccionada
+    document.getElementById("imagen").addEventListener("change", e=>{
+      const file = e.target.files?.[0];
+      if(!file) { imgData = null; imgMeta = {w:0,h:0,type:"PNG"}; return; }
+      const reader = new FileReader();
+      reader.onload = ev => {
+        imgData = ev.target.result;
+        imgMeta.type = getImageTypeFromDataURL(imgData);
+        const tmp = new Image();
+        tmp.onload = () => {
+          imgMeta.w = tmp.naturalWidth;
+          imgMeta.h = tmp.naturalHeight;
+        };
+        tmp.src = imgData;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // === Dibujo del ticket (basado en tu último archivo) ===
+    function drawTicket(doc, baseX, baseY, numText, fechaLarga, fechaCorta, hora, precioAdulto, precioNino){
+      // Contorno general
+      doc.rect(baseX, baseY, ticketW, ticketH);
+
+      // Columna izquierda (control)
+      doc.rect(baseX, baseY, colLeftW, ticketH);
+      doc.setFontSize(10); doc.setFont("times","normal");
+      doc.text("CONTROL", baseX+colLeftW/2, baseY+12, {align:"center"});
+      doc.text("GENERAL", baseX+colLeftW/2, baseY+18, {align:"center"});
+
+      // Casillas + textos
+      doc.setFontSize(9);
+      drawCheckbox(doc, baseX+4,  baseY+26);  doc.text("Tarjeta Adulto", baseX+4+5.5, baseY+28);
+      drawCheckbox(doc, baseX+4,  baseY+32);  doc.text("Tarjeta Niño",   baseX+4+5.5, baseY+34);
+
+      if(numText){
+        doc.setFontSize(10);  doc.setFont("times","bold");
+        doc.text(numText, baseX+9, baseY+48);
+
+        doc.setFontSize(8); doc.setFont("times","bold");
+        doc.text(fechaCorta, baseX+9, baseY+60);
+      }
+
+      // Cuerpo principal
+      const mainX = baseX + colLeftW;
+      doc.rect(mainX, baseY, colMainW, ticketH);
+
+      // IMAGEN dentro del cuerpo y MARCA DE AGUA
+      if (imgData && imgMeta.w && imgMeta.h){
+        const pad = 5;
+
+        // 1) Imagen normal a la izquierda
+        const leftBoxW = 27;
+        const leftBoxH = ticketH - pad*2;
+        const scaledLeft = fitInside(imgMeta.w, imgMeta.h, leftBoxW, leftBoxH);
+        const imgLeftX = mainX + pad - 1;
+        const imgLeftY = baseY + pad + (leftBoxH - scaledLeft.h)/2 - 8;
+        if (scaledLeft.w > 0 && scaledLeft.h > 0){
+          doc.addImage(imgData, imgMeta.type, imgLeftX, imgLeftY, scaledLeft.w, scaledLeft.h);
+        }
+
+        // 2) Marca de agua centrada
+        const mwPad = 8;
+        const mwBoxW = colMainW - mwPad*2;
+        const mwBoxH = ticketH - mwPad*2;
+        const scaledMW = fitInside(imgMeta.w, imgMeta.h, mwBoxW, mwBoxH);
+        const mwX = mainX + (colMainW - scaledMW.w)/2;
+        const mwY = baseY + (ticketH - scaledMW.h)/2;
+
+        const g = doc.GState({opacity:0.10});
+        doc.setGState(g);
+        if (scaledMW.w > 0 && scaledMW.h > 0){
+          doc.addImage(imgData, imgMeta.type, mwX, mwY, scaledMW.w, scaledMW.h);
+        }
+        doc.setGState(doc.GState({opacity:1}));
+      }
+
+      // Títulos y textos
+      doc.setFontSize(12); doc.setFont("times","bold");
+      doc.text("Parroquia “San Miguel Arcángel”", mainX+colMainW/2, baseY+8, {align:"center"});
+
+      doc.setFontSize(14); doc.setFont("times","normal");
+      doc.text("Fiesta Patronal - Gran Peña y Bingo", mainX+colMainW/2, baseY+16, {align:"center"});
+
+      // Nº del cuerpo principal
+      if(numText) doc.text(numText, mainX+colMainW-30, baseY+10);
+
+      // Fecha larga
+      doc.setFontSize(11); doc.setFont("times","bold");
+      doc.text(fechaLarga, mainX+colMainW/2, baseY+28, {align:"center"});
+
+      doc.setFontSize(10); doc.setFont("times","bold");
+      doc.text(`Almuerzo Comunitario, ${hora} – Incluye 1 cartón de Bingo`, mainX+colMainW/2, baseY+36, {align:"center"});
+
+      doc.setFont("times","normal"); doc.setFontSize(9);
+      doc.text("Habrá Entrada, Plato Principal y Postre (La bebida se venderá aparte)", mainX+colMainW/2+1, baseY+44, {align:"center", maxWidth:colMainW-22});
+
+      // Casillas de precios
+      doc.setFontSize(10); doc.setFont("times","bold");
+      let x0 = mainX + 18;
+      const y0 = baseY + 54;
+
+      drawCheckbox(doc, x0, y0-2);
+      //const txtAdulto = `Tarjeta Adulto: $${precioAdulto}`;
+	  const txtAdulto = `Tarjeta Adulto: ${formatARS(precioAdulto)}`;
+      doc.text(txtAdulto, x0 + 5.5, y0);
+
+      const sep = "   —   ";
+      const wAdulto = doc.getTextWidth(txtAdulto);
+      const wSep    = doc.getTextWidth(sep);
+      const x1 = x0 + 5.5 + wAdulto + wSep;
+
+      doc.text(sep, x0 + 5.5 + wAdulto, y0);
+
+      drawCheckbox(doc, x1, y0-2);
+      //const txtNino = `Tarjeta Niño (hasta 10 años): $${precioNino}`;
+	  const txtNino = `Tarjeta Niño (hasta 10 años): ${formatARS(precioNino)}`;
+      doc.text(txtNino, x1 + 5.5, y0);
+
+      // Texto adicional que agregaste
+      doc.setFontSize(9); doc.setFont("times","normal");
+      doc.text("Alias: SANMIGUEL.ARGUELLO", mainX+colMainW/2+32, baseY+ticketH-10, {align:"center"});
+
+      doc.setFontSize(8); doc.setFont("times","normal");
+      doc.text("Salón Parroquial – Francisco Vidal 7259 - Bº Argüello", mainX+colMainW/2, baseY+ticketH-3, {align:"center"});
+    }
+
+    // === Render de PDF FINAL con ambos modos de numeración ===
+    async function renderPDFFinal(desde, hasta, fechaLarga, fechaCorta, hora, precioAdulto, precioNino, modo, tamGrupo){
+      const doc = new jsPDF({unit:"mm", format:"a4"});
+      const total = Math.max(0, hasta - desde + 1);
+      if (total <= 0) { alert("Rango inválido."); return; }
+
+      // Páginas según cantidad de entradas reales a imprimir (4 por hoja)
+      const paginas = Math.ceil(total / TICKETS_PER_PAGE);
+
+      for (let page = 0; page < paginas; page++) {
+        if (page > 0) doc.addPage();
+
+        for (let pos = 0; pos < TICKETS_PER_PAGE; pos++) {
+          const y = M.top + pos * ticketH;
+          let n;
+
+          if (modo === "secuencial") {
+            // 4 por hoja, secuencial
+            n = desde + page * TICKETS_PER_PAGE + pos;
+          } else {
+            // Numeración por hojas (grupos)
+            // Fórmula: r = page % tamGrupo ; b = floor(page / tamGrupo)
+            // n = desde + r + (pos + b*TICKETS_PER_PAGE) * tamGrupo
+            const r = page % tamGrupo;
+            const b = Math.floor(page / tamGrupo);
+            n = desde + r + (pos + b * TICKETS_PER_PAGE) * tamGrupo;
+          }
+
+          if (n > hasta) {
+            // Completa con una entrada sin numeración
+            drawTicket(doc, M.left, y, "Nº:", fechaLarga, fechaCorta, hora, precioAdulto, precioNino);
+          } else {
+            drawTicket(doc, M.left, y, `Nº ${pad4(n)}`, fechaLarga, fechaCorta, hora, precioAdulto, precioNino);
+          }
+        }
+      }
+
+      window.open(doc.output("bloburl"), "_blank");
+    }
+
+    async function renderUnaHoja(fechaLarga, fechaCorta, hora, precioAdulto, precioNino){
+      const doc = new jsPDF({unit:"mm", format:"a4"});
+      for(let i=0; i<TICKETS_PER_PAGE; i++){
+        const y = M.top + i*ticketH;
+        drawTicket(doc, M.left, y, "Nº:", fechaLarga, fechaCorta, hora, precioAdulto, precioNino);
+      }
+      window.open(doc.output("bloburl"), "_blank");
+    }
+
+    // Eventos
+    document.getElementById("configForm").addEventListener("submit", e=>{
+      e.preventDefault();
+      const desde = +document.getElementById("desde").value;
+      const hasta = +document.getElementById("hasta").value;
+      const hora = document.getElementById("hora").value;
+      const precioAdulto = +document.getElementById("precio_adulto").value;
+      const precioNino = +document.getElementById("precio_nino").value;
+
+      const modo = document.getElementById("modoNumeracion").value;
+      const tamGrupo = +document.getElementById("tamanoGrupo").value || 10;
+
+      const iso = document.getElementById("fecha_evento").value;
+      const d = parseISODateLocal(iso) || new Date();
+      const fechaLarga = formatFechaLarga(d);
+      const fechaCorta = formatFechaCorta(d);
+
+      renderPDFFinal(desde, hasta, fechaLarga, fechaCorta, hora, precioAdulto, precioNino, modo, tamGrupo);
+    });
+
+    document.getElementById("btnSinNumeracion").addEventListener("click", ()=>{
+      const hora = document.getElementById("hora").value;
+      const precioAdulto = +document.getElementById("precio_adulto").value;
+      const precioNino = +document.getElementById("precio_nino").value;
+
+      const iso = document.getElementById("fecha_evento").value;
+      const d = parseISODateLocal(iso) || new Date();
+      const fechaLarga = formatFechaLarga(d);
+      const fechaCorta = formatFechaCorta(d);
+
+      renderUnaHoja(fechaLarga, fechaCorta, hora, precioAdulto, precioNino);
+    });
+
+    // Mostrar/ocultar campo de grupo
+    document.getElementById("modoNumeracion").addEventListener("change", e=>{
+      document.getElementById("lblGrupo").style.display = e.target.value==="grupos" ? "block":"none";
+    });
+  </script>
+</body>
+</html>

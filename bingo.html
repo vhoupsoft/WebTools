@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Bolillero de Bingo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root{
+      --unmarked-color:#444;
+      --marked-color:#0a5f1f;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+      background: #f8f8f8;
+      color:#222;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+      height: 100vh;
+      gap: 10px;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+    .grid-wrapper {
+      background: #ffffff;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      padding: 12px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      height: 100%;
+    }
+    .grid-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .stats {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .stat {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-weight: bold;
+      color: #333;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      background: #176c2a;
+      color: white;
+    }
+    .controls button.secondary { background: #0a7cbb; }
+    .chip-color {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 2px solid #666; cursor: pointer;
+      display: inline-block;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      grid-template-rows: repeat(10, 1fr);
+      gap: 6px;
+      min-height: 0;
+    }
+    .cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.2vw;
+      min-height: 40px;
+      min-width: 40px;
+      border-radius: 8px;
+      user-select: none;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      transition: font-size .2s ease, background .2s ease, color .2s ease;
+      pointer-events: none; /* sin clics manuales */
+    }
+    .cell.unmarked { color: var(--unmarked-color); font-weight: normal; }
+    .cell.marked {
+      color: var(--marked-color);
+      font-weight: bold;
+      font-size: 2.8vw;
+      background: #e6ffe6;
+      border-color: #b7f0b7;
+    }
+
+    /* Modal bolillero */
+    #bolilleroModal {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5);
+      z-index:2000; align-items:center; justify-content:center;
+    }
+    /* Modal Historial grande */
+    #histModal {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5);
+      z-index:2100; align-items:center; justify-content:center;
+    }
+    .hist-content {
+      background:#fff; border:1px solid #ddd; border-radius:14px; padding:16px 16px 10px;
+      width:min(92vw,800px);
+    }
+    .hist-header {
+      display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;
+    }
+    .hist-grid {
+      display:flex; flex-wrap:wrap; gap:10px; max-height:65vh; overflow:auto;
+    }
+    .hist-chip {
+      background:#101b10; color:#fff; border-radius:14px; padding:10px 14px;
+      font-weight:800; font-size:32px; min-width:70px; text-align:center;
+    }
+    .linklike {
+      background:#eef1f6; color:#0b1b3a; border:1px solid #c9d3ea;
+      padding:6px 10px; border-radius:8px; cursor:pointer; font-weight:bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="grid-wrapper">
+      <div class="grid-header">
+        <div class="stats">
+          <div class="stat">Restantes: <span id="remainingCount">90</span></div>
+          <div class="stat">Última: <span id="lastNumber">—</span></div>
+        </div>
+        <div class="controls">
+          <button id="bolilleroBtn">🎱 Sacar bolilla</button>
+          <!--<button id="undoBtn" class="secondary">↶ Deshacer</button> -->
+          <button id="openHistModal" class="linklike" title="Ver historial grande">Historial</button>
+
+          <!-- Círculos de color -->
+          <div id="colorUnmarked" class="chip-color" title="Color sin marcar"></div>
+          <div id="colorMarked" class="chip-color" title="Color marcado"></div>
+
+          <!-- Inputs color ocultos -->
+          <input id="pickerUnmarked" type="color" style="display:none" />
+          <input id="pickerMarked" type="color" style="display:none" />
+        </div>
+      </div>
+
+      <div id="grid" class="grid" aria-label="Cuadrilla de números"></div>
+    </div>
+  </div>
+
+  <!-- Modal bolillero (visual simple) -->
+  <div id="bolilleroModal">
+    <div id="bolillaModalContent" style="background:#fff; border:1px solid #ddd; border-radius:12px; padding:20px; min-width:260px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+      <div id="bolillaSpinBig" style="font-size:4em; margin-bottom:24px;">🔄</div>
+      <div id="bolillaNumBig" style="font-size:4em; font-weight:bold; color:#176c2a; border:5px solid #176c2a; border-radius:50%; width:160px; height:160px; display:none; align-items:center; justify-content:center; text-align:center; box-sizing:border-box; padding:18px 48px; min-width:100px;"></div>
+    </div>
+  </div>
+
+  <!-- Modal Historial Grande -->
+  <div id="histModal">
+    <div class="hist-content">
+      <div class="hist-header">
+        <strong style="font-size:18px">Historial</strong>
+        <div style="display:flex; gap:8px">
+          <button id="closeHistModal" class="linklike">Cerrar</button>
+          <button id="clearHistModal" class="linklike" style="background:#ffe9e9; border-color:#f7c5c5; color:#7a0000">Limpiar historial</button>
+        </div>
+      </div>
+      <div id="histGrid" class="hist-grid"></div>
+    </div>
+  </div>
+
+  <script>
+  // ---------- localStorage ----------
+  const LS_KEYS = {
+    MARKED: 'bingo_marked_v2',
+    HISTORY: 'bingo_history_v2',
+    COLORS: 'bingo_colors_v2'
+  };
+  function saveState() {
+    localStorage.setItem(LS_KEYS.MARKED, JSON.stringify([...markedSet]));
+    localStorage.setItem(LS_KEYS.HISTORY, JSON.stringify(historyData));
+    const colors = {
+      unmarked: getComputedStyle(document.documentElement).getPropertyValue('--unmarked-color').trim(),
+      marked: getComputedStyle(document.documentElement).getPropertyValue('--marked-color').trim()
+    };
+    localStorage.setItem(LS_KEYS.COLORS, JSON.stringify(colors));
+  }
+  function loadState() {
+    try {
+      const m = JSON.parse(localStorage.getItem(LS_KEYS.MARKED) || '[]');
+      const h = JSON.parse(localStorage.getItem(LS_KEYS.HISTORY) || '[]');
+      const cs = JSON.parse(localStorage.getItem(LS_KEYS.COLORS) || '{}');
+      if (Array.isArray(m)) m.forEach(n => markedSet.add(Number(n)));
+      if (Array.isArray(h)) historyData = h.map(Number);
+      if (cs.unmarked) document.documentElement.style.setProperty('--unmarked-color', cs.unmarked);
+      if (cs.marked) document.documentElement.style.setProperty('--marked-color', cs.marked);
+    } catch {}
+  }
+
+  // ---------- Grilla ----------
+  const grid = document.getElementById('grid');
+  const cells = [];
+  for (let row = 0; row < 10; row++) {
+    for (let col = 0; col < 9; col++) {
+      const cell = document.createElement('div');
+      cell.classList.add('cell', 'unmarked');
+      let num;
+      if (col === 0 && row === 0) {
+        cell.textContent = '90';
+        cell.dataset.num = '90';
+      } else if (col === 0) {
+        num = row;
+        cell.textContent = num.toString().padStart(2, '0');
+        cell.dataset.num = num.toString();
+      } else {
+        num = col * 10 + row;
+        if (num > 90) {
+          cell.textContent = '';
+        } else {
+          cell.textContent = num.toString().padStart(2, '0');
+          cell.dataset.num = num.toString();
+        }
+      }
+      grid.appendChild(cell);
+      cells.push(cell);
+    }
+  }
+
+  // ---------- Estado y UI ----------
+  const remainingCount = document.getElementById('remainingCount');
+  const lastNumberSpan = document.getElementById('lastNumber');
+  const undoBtn = document.getElementById('undoBtn');
+
+  const openHistModalBtn = document.getElementById('openHistModal');
+  const histModal = document.getElementById('histModal');
+  const histGrid = document.getElementById('histGrid');
+  const closeHistModalBtn = document.getElementById('closeHistModal');
+  const clearHistModalBtn = document.getElementById('clearHistModal');
+
+  const chipUnmarked = document.getElementById('colorUnmarked');
+  const chipMarked = document.getElementById('colorMarked');
+  const pickerUnmarked = document.getElementById('pickerUnmarked');
+  const pickerMarked = document.getElementById('pickerMarked');
+
+  let historyData = [];
+  const markedSet = new Set();
+
+  function renderHistoryModal() {
+    histGrid.innerHTML = '';
+    historyData.slice().forEach(n => {
+      const big = document.createElement('div');
+      big.className = 'hist-chip';
+      big.textContent = n.toString().padStart(2,'0');
+      histGrid.appendChild(big);
+    });
+  }
+  function updateRemaining() {
+    remainingCount.textContent = 90 - markedSet.size;
+  }
+  function setLastNumber(n) {
+    lastNumberSpan.textContent = n != null ? n.toString().padStart(2, '0') : '—';
+  }
+
+  function applyColorsToChips() {
+    const un = getComputedStyle(document.documentElement).getPropertyValue('--unmarked-color').trim() || '#444';
+    const mk = getComputedStyle(document.documentElement).getPropertyValue('--marked-color').trim() || '#0a5f1f';
+    chipUnmarked.style.background = un;
+    chipMarked.style.background = mk;
+  }
+
+  function addToHistory(num) {
+    if (!markedSet.has(num)) {
+      markedSet.add(num);
+      historyData.push(num);
+      const cell = cells.find(c => parseInt(c.dataset.num, 10) === num);
+      if (cell) {
+        cell.classList.remove('unmarked'); cell.classList.add('marked');
+        cell.style.fontSize = '2.8vw';
+      }
+      updateRemaining();
+      setLastNumber(num);
+      saveState();
+    }
+  }
+  function removeLastFromHistory() {
+    if (!historyData.length) return;
+    const last = historyData[historyData.length - 1];
+    historyData.pop();
+    markedSet.delete(last);
+    const cell = cells.find(c => parseInt(c.dataset.num, 10) === last);
+    if (cell) {
+      cell.classList.remove('marked'); cell.classList.add('unmarked');
+      cell.style.fontSize = '2.2vw';
+    }
+    updateRemaining();
+    setLastNumber(historyData.length ? historyData[historyData.length - 1] : null);
+    saveState();
+    if (histModal.style.display === 'flex') renderHistoryModal();
+  }
+
+  // Cargar estado guardado
+  loadState();
+  // Aplicar estado a grilla
+  for (const n of markedSet) {
+    const cell = cells.find(c => parseInt(c.dataset.num, 10) === n);
+    if (cell) {
+      cell.classList.remove('unmarked'); cell.classList.add('marked');
+      cell.style.fontSize = '2.8vw';
+    }
+  }
+  updateRemaining();
+  setLastNumber(historyData.length ? historyData[historyData.length - 1] : null);
+  applyColorsToChips();
+
+  // ---------- Colores (paleta) ----------
+  chipUnmarked.addEventListener('click', () => {
+    pickerUnmarked.value = rgbToHex(getComputedStyle(document.documentElement).getPropertyValue('--unmarked-color').trim() || '#444');
+    pickerUnmarked.click();
+  });
+  chipMarked.addEventListener('click', () => {
+    pickerMarked.value = rgbToHex(getComputedStyle(document.documentElement).getPropertyValue('--marked-color').trim() || '#0a5f1f');
+    pickerMarked.click();
+  });
+  pickerUnmarked.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--unmarked-color', pickerUnmarked.value);
+    applyColorsToChips(); saveState();
+  });
+  pickerMarked.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--marked-color', pickerMarked.value);
+    applyColorsToChips(); saveState();
+  });
+
+  function rgbToHex(rgb){
+    if (!rgb) return '#000000';
+    if (rgb.startsWith('#')) return rgb;
+    const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (!m) return '#000000';
+    const r = (+m[1]).toString(16).padStart(2,'0');
+    const g = (+m[2]).toString(16).padStart(2,'0');
+    const b = (+m[3]).toString(16).padStart(2,'0');
+    return `#${r}${g}${b}`;
+  }
+
+  // ---------- Historial (modal) ----------
+  function openHist() { renderHistoryModal(); histModal.style.display = 'flex'; }
+  function closeHist() { histModal.style.display = 'none'; }
+  openHistModalBtn.addEventListener('click', openHist);
+  closeHistModalBtn.addEventListener('click', closeHist);
+  histModal.addEventListener('click', (e) => { if (e.target === histModal) closeHist(); });
+  clearHistModalBtn.addEventListener('click', () => {
+    // Limpiar todo el juego
+    markedSet.clear();
+    historyData = [];
+    cells.forEach(c => { c.classList.remove('marked'); c.classList.add('unmarked'); c.style.fontSize = '2.2vw'; });
+    updateRemaining(); setLastNumber(null); saveState(); renderHistoryModal();
+  });
+
+  // ---------- Bolillero ----------
+  const bolilleroBtn = document.getElementById('bolilleroBtn');
+  const bolilleroModal = document.getElementById('bolilleroModal');
+  const spin = document.getElementById('bolillaSpinBig');
+  const bigNum = document.getElementById('bolillaNumBig');
+
+  let bolillasRestantes = Array.from({length: 90}, (_, i) => i + 1);
+  function actualizarBolillasRestantes() {
+    bolillasRestantes = [];
+    for (let n = 1; n <= 90; n++) if (!markedSet.has(n)) bolillasRestantes.push(n);
+  }
+
+  // --- Audio bolillero (Web Audio API) ---
+  let audioCtx;
+  let bolilleroNodes = null;
+
+  function startBolilleroSound() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 450;
+    filter.Q.value = 0.9;
+
+    const lfo = audioCtx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 5;
+    const lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = 250;
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -30; comp.knee.value = 20; comp.ratio.value = 3;
+    comp.attack.value = 0.003; comp.release.value = 0.15;
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.15, audioCtx.currentTime + 0.15);
+
+    noise.connect(filter); filter.connect(comp); comp.connect(gain); gain.connect(audioCtx.destination);
+    noise.start(); lfo.start();
+
+    bolilleroNodes = { noise, lfo, gain };
+  }
+
+  function stopBolilleroSound() {
+    if (!bolilleroNodes || !audioCtx) return;
+    const { noise, lfo, gain } = bolilleroNodes;
+    try {
+      gain.gain.cancelScheduledValues(audioCtx.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.12);
+    } catch {}
+    setTimeout(() => {
+      try { noise.stop(); } catch {}
+      try { lfo.stop(); } catch {}
+      bolilleroNodes = null;
+    }, 140);
+  }
+
+  // --- Voz: "Salió el ..." ---
+  let selectedVoice = null;
+  function pickSpanishVoice() {
+    const voices = window.speechSynthesis.getVoices();
+    selectedVoice =
+      voices.find(v => /es[-_]?AR/i.test(v.lang)) ||
+      voices.find(v => /^es([-_].+)?$/i.test(v.lang)) ||
+      null;
+  }
+  if ('speechSynthesis' in window) {
+    pickSpanishVoice();
+    window.speechSynthesis.onvoiceschanged = pickSpanishVoice;
+  }
+
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    if (selectedVoice) u.voice = selectedVoice;
+    u.rate = 1.02; u.pitch = 1.0;
+    u.lang = selectedVoice?.lang || 'es-AR';
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  }
+
+  function numberToWordsEs(n) {
+    const u = ["cero","uno","dos","tres","cuatro","cinco","seis","siete","ocho","nueve"];
+    const e = ["diez","once","doce","trece","catorce","quince","dieciséis","diecisiete","dieciocho","diecinueve"];
+    const d = [null,null,"veinte","treinta","cuarenta","cincuenta","sesenta","setenta","ochenta","noventa"];
+    if (n < 10) return u[n];
+    if (n < 20) return e[n - 10];
+    if (n === 20) return "veinte";
+    if (n > 20 && n < 30) {
+      const map21_29 = {
+        21:"veintiuno",22:"veintidós",23:"veintitrés",24:"veinticuatro",25:"veinticinco",
+        26:"veintiséis",27:"veintisiete",28:"veintiocho",29:"veintinueve"
+      };
+      return map21_29[n];
+    }
+    const dec = Math.floor(n / 10);
+    const un = n % 10;
+    return un === 0 ? d[dec] : `${d[dec]} y ${u[un]}`;
+  }
+
+  function twoDigitWordsEs(n) {
+    const u = ["cero","uno","dos","tres","cuatro","cinco","seis","siete","ocho","nueve"];
+    const s = n.toString().padStart(2,'0');
+    return `${u[+s[0]]} ${u[+s[1]]}`;
+  }
+
+  function sayNumber(n) {
+    const completo = numberToWordsEs(n);
+    const dosCifras = twoDigitWordsEs(n);
+    speak(`Salió el ${completo}, ${dosCifras}`);
+  }
+
+  // --- Lógica del bolillero ---
+  function marcarBolilla(n) {
+    addToHistory(n);
+  }
+
+  function sacarBolillaModal() {
+    actualizarBolillasRestantes();
+    if (bolillasRestantes.length === 0) {
+      bolilleroModal.style.display = 'flex';
+      spin.style.display = 'none';
+      bigNum.style.display = 'flex';
+      bigNum.style.color = '#a00';
+      bigNum.style.borderColor = '#a00';
+      bigNum.textContent = '—';
+      setTimeout(() => { bolilleroModal.style.display = 'none'; }, 1500);
+      return;
+    }
+    bolilleroModal.style.display = 'flex';
+    spin.style.display = 'block';
+    bigNum.style.display = 'none';
+    bigNum.style.color = '#176c2a';
+    bigNum.style.borderColor = '#176c2a';
+    bigNum.textContent = '';
+
+    startBolilleroSound();
+
+    let vueltas = Math.floor(Math.random() * 12) + 18; // 18..29
+    let idx = 0;
+    let lastNum = null;
+
+    const interval = setInterval(() => {
+      idx++;
+      const pool = bolillasRestantes;
+      const n = pool[Math.floor(Math.random() * pool.length)];
+      bigNum.style.display = 'flex';
+      bigNum.textContent = n.toString().padStart(2,'0');
+      lastNum = n;
+
+      if (idx >= vueltas) {
+        clearInterval(interval);
+        spin.style.display = 'none';
+        bigNum.textContent = lastNum.toString().padStart(2,'0');
+        stopBolilleroSound();
+        setTimeout(() => { sayNumber(lastNum); }, 120);
+        setTimeout(() => {
+          marcarBolilla(lastNum);
+          bolilleroModal.style.display = 'none';
+        }, 1000);
+      }
+    }, 110);
+  }
+
+  document.getElementById('bolilleroBtn').addEventListener('click', () => {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+    sacarBolillaModal();
+  });
+  undoBtn.addEventListener('click', removeLastFromHistory);
+
+  </script>
+</body>
+</html>
