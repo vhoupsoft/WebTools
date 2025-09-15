@@ -113,7 +113,7 @@
       background: #e0e0e0;
       color: #333;
     }
-    #clearBtn {
+    #modalClearBtn {
       background: #ffeaea;
       color: #a00;
     }
@@ -250,17 +250,17 @@
     <div id="controls-row">
       <input type="text" id="numberInput" maxlength="2" placeholder="N°" autocomplete="off">
       <button id="toggleBtn">Marcar/Desmarcar</button>
-      <button id="clearBtn">Desmarcar todos</button>
       <button class="color-btn unmarked" id="unmarkedColorBtn" title="Cambiar color desmarcado"></button>
       <button class="color-btn marked" id="markedColorBtn" title="Cambiar color marcado"></button>
       <input type="text" id="multiInput" placeholder="Números separados por coma" autocomplete="off">
-      <button id="clearMultiBtn">Limpiar</button>
-      <button id="showHistoryBtn">Ver historial</button>
+      <button id="clearMultiBtn">Limp.Ctrl.</button>
+      <button id="showHistoryBtn" style="background:#176c2a; color:#fff;">Historial</button>
     </div>
     <div id="modalHistory" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); z-index:1000; align-items:center; justify-content:center;">
-      <div style="background:#fff; padding:24px; border-radius:12px; max-width:90vw; max-height:80vh; overflow:auto; box-shadow:0 4px 24px #0003;">
+      <div style="background:#fff; padding:24px; border-radius:12px; max-width:90vw; max-height:80vh; overflow:auto; box-shadow:0 4px 24px #0003; position:relative;">
         <h2>Historial de números marcados</h2>
         <div id="historyContent" style="font-size:1.3em; line-height:2;"></div>
+        <button id="modalClearBtn" style="position:absolute; right:24px; bottom:24px; background:#ffeaea; color:#a00;">Desmarcar todos</button>
         <button id="closeHistoryBtn" style="margin-top:16px; font-size:1em;">Cerrar</button>
       </div>
     </div>
@@ -309,6 +309,8 @@
     } else {
       removeFromHistory(num);
     }
+	//Persistimos las marcaciones
+    saveState();
     // Control general si la caja multiInput tiene contenido
     if (multiInput.value.trim()) {
       procesarMultiInput();
@@ -325,7 +327,6 @@
   // Control de input y botones
   const numberInput = document.getElementById('numberInput');
   const toggleBtn = document.getElementById('toggleBtn');
-  const clearBtn = document.getElementById('clearBtn');
   const multiInput = document.getElementById('multiInput');
   const clearMultiBtn = document.getElementById('clearMultiBtn');
 
@@ -344,18 +345,6 @@
       toggleNumber();
       e.preventDefault();
     }
-  };
-
-  clearBtn.onclick = function() {
-    cells.forEach(cell => {
-      if (cell.classList.contains('marked')) {
-        cell.classList.remove('marked');
-        cell.classList.add('unmarked');
-      }
-    });
-    numberInput.value = '';
-    numberInput.focus();
-    clearHistory();
   };
 
   // Color picker para marcado/desmarcado
@@ -471,22 +460,11 @@
     history = [];
   }
 
-  // --- MODIFICAR clearBtn PARA LIMPIAR HISTORIAL ---
-  clearBtn.onclick = function() {
-    cells.forEach(cell => {
-      if (cell.classList.contains('marked')) {
-        cell.classList.remove('marked');
-        cell.classList.add('unmarked');
-      }
-    });
-    numberInput.value = '';
-    numberInput.focus();
-    clearHistory();
-  };
-
+  
   // --- MODAL DE HISTORIAL ---
   const showHistoryBtn = document.getElementById('showHistoryBtn');
   const modalHistory = document.getElementById('modalHistory');
+  const modalClearBtn = document.getElementById('modalClearBtn');
   const historyContent = document.getElementById('historyContent');
   const closeHistoryBtn = document.getElementById('closeHistoryBtn');
 
@@ -511,6 +489,26 @@
     modalHistory.style.display = 'flex';
   };
 
+  // --- MODIFICAR clearBtn PARA LIMPIAR HISTORIAL ---
+  modalClearBtn.onclick = function() {
+    if (history.length === 0) {
+      //alert("No hay números en el historial para desmarcar.");
+      return;
+    }; 
+    const ok = confirm("¿Deseás desmarcar todos los números y borrar el historial?\nEsta acción no se puede deshacer.");
+    if (!ok) return;
+    
+    cells.forEach(cell => {
+    cell.classList.remove('marked');
+    cell.classList.add('unmarked');
+  });
+  numberInput.value = '';
+  numberInput.focus();
+  clearHistory();
+  saveState();
+  modalHistory.style.display = 'none';
+  };
+  
   closeHistoryBtn.onclick = function() {
     modalHistory.style.display = 'none';
   };
@@ -521,6 +519,41 @@
       modalHistory.style.display = 'none';
     }
   };
+
+  // --- PERSISTENCIA ---
+  function saveState() {
+    const markedNumbers = cells.filter(cell => cell.classList.contains('marked')).map(cell => parseInt(cell.dataset.num, 10));
+    localStorage.setItem('bingo_marked', JSON.stringify(markedNumbers));
+    localStorage.setItem('bingo_history', JSON.stringify(history));
+  }
+
+  function loadState() {
+    // Marcar celdas
+    const markedNumbers = JSON.parse(localStorage.getItem('bingo_marked') || '[]');
+    cells.forEach(cell => {
+      const num = parseInt(cell.dataset.num, 10);
+      if (markedNumbers.includes(num)) {
+        cell.classList.add('marked');
+        cell.classList.remove('unmarked');
+      } else {
+        cell.classList.remove('marked');
+        cell.classList.add('unmarked');
+      }
+    });
+    // Historial
+    history = JSON.parse(localStorage.getItem('bingo_history') || '[]');
+  }
+
+  // Al cerrar modal, guardar estado
+  closeHistoryBtn.onclick = function() {
+    modalHistory.style.display = 'none';
+    saveState();
+  };
+
+  // Al cargar la página, restaurar estado
+  window.onload = function() {
+    loadState();
+  };	
   </script>
 </body>
 </html>
