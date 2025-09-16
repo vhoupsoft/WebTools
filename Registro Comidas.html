@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Registro de Comidas y Bebidas</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #f7f7f7; }
+    #main { max-width: 500px; margin: 0 auto; padding: 16px; }
+    h1 { text-align: center; }
+    .btn { padding: 8px 16px; margin: 4px; border-radius: 6px; border: none; background: #176c2a; color: #fff; font-size: 1em; cursor: pointer; }
+    .btn.secondary { background: #888; }
+    .btn.export { background: #0a5; }
+    .btn.delete { background: #c00; color: #fff; margin-left: 8px; }
+    .btn.clean { background: #c00; color: #fff; }
+    .day-list, .hour-list { list-style: none; padding: 0; margin: 0; }
+    .day-list { max-height: 220px; overflow-y: auto; border: 1px solid #ccc; border-radius: 8px; background: #fff; margin-bottom: 12px; }
+    .day-list li { background: #fff; margin: 6px 0; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 10px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+    .hour-list li { background: #fff; margin: 6px 0; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 10px; cursor: pointer; font-size: 0.98em; display: flex; align-items: center; justify-content: space-between; }
+    .record-detail { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 12px; margin-top: 12px; }
+    .field { margin-bottom: 10px; }
+    label { display: block; margin-bottom: 4px; font-weight: bold; }
+    input, textarea, select { width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 1em; }
+    textarea { min-height: 60px; }
+    .export-area { width: 100%; min-height: 80px; margin-top: 10px; }
+    #modalExport, #modalConfirm { display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.3); z-index:1000; align-items:center; justify-content:center; }
+    .modal-content { background:#fff; border-radius:12px; padding:24px; max-width:90vw; box-shadow:0 4px 24px #0003; }
+    .modal-actions { text-align:right; margin-top:12px; }
+    @media (max-width: 600px) {
+      #main { padding: 4px; }
+      .btn { font-size: 0.95em; }
+      .day-list { max-height: 160px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="main">
+    <h1>Registro de Comidas y Bebidas</h1>
+    <div>
+      <button class="btn" id="addVoiceBtn">Registrar por voz(NO)</button>
+      <button class="btn secondary" id="addManualBtn">Registrar manualmente</button>
+      <button class="btn export" id="clipboardBtn">PortaPapeles</button>
+      <button class="btn export" id="exportJsonBtn">Exportar</button>
+      <button class="btn secondary" id="importJsonBtn">Importar</button>
+      <input type="file" id="importFileInput" accept="application/json" style="display:none;">
+      <button class="btn clean" id="cleanAllBtn">Limpiar historial</button>
+    </div>
+    <h2>Días con registros</h2>
+    <ul class="day-list" id="dayList"></ul>
+    <div id="hourSection" style="display:none;">
+      <h3>Registros de <span id="selectedDay"></span></h3>
+      <button class="btn delete" id="deleteDayBtn" style="float:right; margin-bottom:8px;">Eliminar todo el día</button>
+      <ul class="hour-list" id="hourList"></ul>
+      <button class="btn secondary" id="backToDaysBtn">Volver</button>
+    </div>
+    <div id="recordSection" style="display:none;">
+      <h3>Detalle del registro</h3>
+      <div class="record-detail">
+        <div class="field">
+          <label for="editTime">Hora</label>
+          <input type="text" id="editTime">
+        </div>
+        <div class="field">
+          <label for="editText">Detalle</label>
+          <textarea id="editText"></textarea>
+        </div>
+        <button class="btn" id="saveEditBtn">Guardar cambios</button>
+        <button class="btn secondary" id="backToHoursBtn">Volver</button>
+      </div>
+    </div>
+    <!-- Modal Exportación -->
+    <div id="modalExport">
+      <div class="modal-content">
+        <h3>Exportar registros al portapapeles</h3>
+        <div class="field">
+          <label>Desde</label>
+          <input type="date" id="exportFrom">
+        </div>
+        <div class="field">
+          <label>Hasta</label>
+          <input type="date" id="exportTo">
+        </div>
+        <div class="modal-actions">
+          <button class="btn export" id="doExportBtn">PortaPapeles</button>
+          <button class="btn export" id="doExportWhatsappBtn">PP-Whatsapp</button>
+          <button class="btn secondary" id="closeExportBtn">Cerrar</button>
+        </div>
+        <textarea class="export-area" id="exportArea" readonly></textarea>
+      </div>
+    </div>
+    <!-- Modal Confirmación -->
+    <div id="modalConfirm">
+      <div class="modal-content">
+        <div id="confirmText"></div>
+        <div class="modal-actions">
+          <button class="btn" id="confirmYesBtn">Sí</button>
+          <button class="btn secondary" id="confirmNoBtn">No</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+// --- Persistencia ---
+function getRecords() {
+  return JSON.parse(localStorage.getItem('food_records') || '[]');
+}
+function saveRecords(records) {
+  localStorage.setItem('food_records', JSON.stringify(records));
+}
+
+// --- Estado ---
+let records = getRecords();
+let selectedDay = null;
+let selectedRecord = null;
+let pendingDelete = null;
+let pendingDeleteDay = null;
+let pendingClean = false;
+let pendingImport = null;
+let pendingExportJson = false;
+
+// --- Utilidades ---
+function formatDate(dateStr) {
+  let parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+}
+function formatDateExport(dateStr) {
+  let parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+}
+function getDayKey(date) {
+  if (!date) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  let match = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+    let dd = parseInt(match[1], 10);
+    let mm = parseInt(match[2], 10) - 1;
+    let yyyy = parseInt(match[3], 10);
+    let d = new Date(yyyy, mm, dd, 12, 0, 0);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  match = date.match(/^(\d{1,2})$/);
+  if (match) {
+    let dd = parseInt(match[1], 10);
+    let now = new Date();
+    let mm = now.getMonth();
+    let yyyy = now.getFullYear();
+    let d = new Date(yyyy, mm, dd, 12, 0, 0);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  let d = new Date(date);
+  if (isNaN(d)) return '';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// --- Renderizar días ---
+function renderDays() {
+  const dayList = document.getElementById('dayList');
+  dayList.innerHTML = '';
+  const days = [...new Set(records.map(r => r.day))].sort();
+  if (days.length === 0) {
+    dayList.innerHTML = '<li>No hay registros aún.</li>';
+    return;
+  }
+  days.forEach(day => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span style="flex:1">${formatDate(day)}</span>`;
+    li.onclick = (e) => {
+      if (e.target.classList.contains('btn')) return;
+      showHours(day);
+    };
+    dayList.appendChild(li);
+  });
+  document.getElementById('hourSection').style.display = 'none';
+  document.getElementById('recordSection').style.display = 'none';
+  document.getElementById('modalExport').style.display = 'none';
+  document.getElementById('modalConfirm').style.display = 'none';
+}
+
+// --- Renderizar horas de un día con drag & drop ---
+function showHours(day) {
+  selectedDay = day;
+  const hourList = document.getElementById('hourList');
+  hourList.innerHTML = '';
+  document.getElementById('selectedDay').textContent = formatDate(day);
+
+  let dayRecords = records.filter(r => r.day === day);
+  if (dayRecords.some(r => typeof r.order === 'undefined')) {
+    dayRecords.forEach((r, idx) => { r.order = idx; });
+    saveRecords(records);
+  }
+  dayRecords.sort((a, b) => a.order - b.order);
+
+  dayRecords.forEach((rec, idx) => {
+    const li = document.createElement('li');
+    li.draggable = true;
+    li.style.cursor = 'grab';
+    li.dataset.idx = idx;
+    li.dataset.day = day;
+    let preview = rec.text.split(' ').slice(0,4).join(' ');
+    li.innerHTML = `
+      <span style="flex:1">
+        <span style="font-size:1.2em;cursor:grab;" title="Arrastrar para reordenar">☰</span>
+        <b>${rec.time}</b> &mdash; ${preview}${rec.text.length>preview.length?'...':''}
+      </span>
+      <button class="btn delete" title="Eliminar registro" data-idx="${idx}">🗑️</button>
+      <button class="btn secondary" title="Mover a otro día" data-idx="${idx}">📅</button>
+    `;
+
+    // Drag events
+    li.addEventListener('dragstart', function(e) {
+      e.dataTransfer.setData('text/plain', JSON.stringify({fromIdx: idx}));
+      li.classList.add('dragging');
+    });
+    li.addEventListener('dragend', function(e) {
+      li.classList.remove('dragging');
+    });
+    li.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      li.classList.add('dragover');
+    });
+    li.addEventListener('dragleave', function(e) {
+      li.classList.remove('dragover');
+    });
+    li.addEventListener('drop', function(e) {
+      e.preventDefault();
+      li.classList.remove('dragover');
+      let data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      reorderRecords(day, data.fromIdx, idx);
+    });
+
+    // Eliminar registro
+    li.querySelector('.delete').onclick = (e) => {
+      e.stopPropagation();
+      pendingDelete = { day, idx };
+      showConfirm('¿Eliminar este registro?');
+    };
+
+    // Mover a otro día
+    li.querySelector('.secondary').onclick = (e) => {
+      e.stopPropagation();
+      let newDay = prompt('Ingrese la nueva fecha destino (YYYY-MM-DD, DD/MM/YYYY o solo día):', day);
+      let key = getDayKey(newDay);
+      if (!key) {
+        alert('Fecha inválida.');
+        return;
+      }
+      moveRecordToDay(day, idx, key);
+    };
+
+    li.onclick = (e) => {
+      if (e.target.classList.contains('delete') || e.target.classList.contains('secondary')) return;
+      showRecord(rec);
+    };
+    hourList.appendChild(li);
+  });
+
+  document.getElementById('hourSection').style.display = '';
+  document.getElementById('recordSection').style.display = 'none';
+  document.getElementById('modalExport').style.display = 'none';
+  document.getElementById('modalConfirm').style.display = 'none';
+}
+
+// --- Reordenar registros dentro del día ---
+function reorderRecords(day, fromIdx, toIdx) {
+  let dayRecords = records.filter(r => r.day === day);
+  if (fromIdx === toIdx) return;
+  const moved = dayRecords.splice(fromIdx, 1)[0];
+  dayRecords.splice(toIdx, 0, moved);
+  dayRecords.forEach((r, i) => r.order = i);
+  let otherRecords = records.filter(r => r.day !== day);
+  records = [...otherRecords, ...dayRecords];
+  saveRecords(records);
+  showHours(day);
+}
+
+// --- Mover registro a otro día ---
+function moveRecordToDay(fromDay, idx, toDay) {
+  let dayRecords = records.filter(r => r.day === fromDay);
+  let rec = dayRecords[idx];
+  rec.day = toDay;
+  let newDayRecords = records.filter(r => r.day === toDay && r !== rec);
+  rec.order = newDayRecords.length;
+  saveRecords(records);
+  showHours(fromDay);
+}
+
+// --- Mostrar/editar registro ---
+function showRecord(rec) {
+  selectedRecord = rec;
+  document.getElementById('editTime').value = rec.time;
+  document.getElementById('editText').value = rec.text;
+  document.getElementById('recordSection').style.display = '';
+  document.getElementById('hourSection').style.display = 'none';
+  document.getElementById('modalExport').style.display = 'none';
+  document.getElementById('modalConfirm').style.display = 'none';
+}
+document.getElementById('saveEditBtn').onclick = function() {
+  if (!selectedRecord) return;
+  selectedRecord.time = document.getElementById('editTime').value.trim();
+  selectedRecord.text = document.getElementById('editText').value.trim();
+  saveRecords(records);
+  showHours(selectedDay);
+};
+document.getElementById('backToHoursBtn').onclick = function() {
+  showHours(selectedDay);
+};
+document.getElementById('backToDaysBtn').onclick = function() {
+  renderDays();
+};
+
+// --- Agregar registro manualmente ---
+document.getElementById('addManualBtn').onclick = function() {
+  let day = '';
+  while (true) {
+    day = prompt('Ingrese la fecha (YYYY-MM-DD, DD/MM/YYYY o solo día):', new Date().toISOString().slice(0,10));
+    if (!day) return;
+    let key = getDayKey(day);
+    if (key) { day = key; break; }
+    alert('Fecha inválida. Intente nuevamente.');
+  }
+  let time = prompt('Ingrese la hora (HH:MM) o texto aproximado:', new Date().toTimeString().slice(0,5));
+  if (!time) return;
+  let text = prompt('Detalle de lo comido/bebido:');
+  if (!text) return;
+  // Asigna orden al final del día
+  let dayRecords = records.filter(r => r.day === day);
+  let order = dayRecords.length;
+  records.push({ day: day, time: time.trim(), text: text.trim(), order: order });
+  saveRecords(records);
+  renderDays();
+};
+
+// --- Eliminar todos los registros de un día ---
+document.getElementById('deleteDayBtn').onclick = function() {
+  pendingDeleteDay = selectedDay;
+  showConfirm('¿Eliminar todos los registros de este día?');
+};
+
+// --- Exportar a portapapeles (modal) ---
+document.getElementById('clipboardBtn').onclick = function() {
+  document.getElementById('modalExport').style.display = 'flex';
+  document.getElementById('exportArea').value = '';
+};
+document.getElementById('doExportBtn').onclick = function() {
+  let from = document.getElementById('exportFrom').value;
+  let to = document.getElementById('exportTo').value;
+  if (!from || !to) {
+    alert('Debe indicar ambas fechas.');
+    return;
+  }
+  let fromKey = getDayKey(from);
+  let toKey = getDayKey(to);
+  let filtered = records.filter(r => r.day >= fromKey && r.day <= toKey);
+  if (filtered.length === 0) {
+    document.getElementById('exportArea').value = 'No hay registros en ese rango.';
+    return;
+  }
+  let out = '';
+  let grouped = {};
+  filtered.forEach(r => {
+    if (!grouped[r.day]) grouped[r.day] = [];
+    grouped[r.day].push(r);
+  });
+  Object.keys(grouped).sort().forEach(day => {
+    out += formatDateExport(day) + '\n';
+    grouped[day].forEach(rec => {
+      out += '\t' + rec.time + ' ' + rec.text + '\n';
+    });
+  });
+  document.getElementById('exportArea').value = out.trim();
+  navigator.clipboard.writeText(out.trim()).then(() => {
+    alert('Exportado al portapapeles.');
+    document.getElementById('modalExport').style.display = 'none';
+  });
+};
+document.getElementById('doExportWhatsappBtn').onclick = function() {
+  let from = document.getElementById('exportFrom').value;
+  let to = document.getElementById('exportTo').value;
+  if (!from || !to) {
+    alert('Debe indicar ambas fechas.');
+    return;
+  }
+  let fromKey = getDayKey(from);
+  let toKey = getDayKey(to);
+  let filtered = records.filter(r => r.day >= fromKey && r.day <= toKey);
+  if (filtered.length === 0) {
+    document.getElementById('exportArea').value = 'No hay registros en ese rango.';
+    return;
+  }
+  let out = '';
+  let grouped = {};
+  filtered.forEach(r => {
+    if (!grouped[r.day]) grouped[r.day] = [];
+    grouped[r.day].push(r);
+  });
+  Object.keys(grouped).sort().forEach(day => {
+    out += `*${formatDateExport(day)}*\n`;
+    grouped[day].forEach(rec => {
+      out += `  . _${rec.time}_ - ${rec.text}\n`;
+    });
+  });
+  document.getElementById('exportArea').value = out.trim();
+  navigator.clipboard.writeText(out.trim()).then(() => {
+    alert('Texto para Whatsapp copiado al portapapeles.');
+    document.getElementById('modalExport').style.display = 'none';
+  });
+};
+document.getElementById('closeExportBtn').onclick = function() {
+  document.getElementById('modalExport').style.display = 'none';
+};
+
+// --- Exportar JSON con confirmación ---
+document.getElementById('exportJsonBtn').onclick = function() {
+  pendingExportJson = true;
+  showConfirm('¿Desea descargar un archivo JSON con todos los registros actuales?');
+};
+
+// --- Importar JSON ---
+document.getElementById('importJsonBtn').onclick = function() {
+  document.getElementById('importFileInput').value = '';
+  document.getElementById('importFileInput').click();
+};
+document.getElementById('importFileInput').onchange = function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    let imported;
+    try {
+      imported = JSON.parse(evt.target.result);
+    } catch {
+      alert('El archivo no es un JSON válido.');
+      return;
+    }
+    if (!Array.isArray(imported) || !imported.every(r => r.day && r.time && r.text)) {
+      alert('El archivo no tiene el formato esperado.');
+      return;
+    }
+    pendingImport = imported;
+    showConfirm('¿Desea reemplazar todos los registros actuales por los importados?');
+  };
+  reader.readAsText(file);
+};
+
+// --- Limpiar historial (modal confirmación) ---
+document.getElementById('cleanAllBtn').onclick = function() {
+  pendingClean = true;
+  showConfirm('¿Seguro que desea borrar todo el historial?');
+};
+
+// --- Confirmación modal ---
+function showConfirm(text) {
+  document.getElementById('confirmText').textContent = text;
+  document.getElementById('modalConfirm').style.display = 'flex';
+}
+document.getElementById('confirmYesBtn').onclick = function() {
+  if (pendingDelete) {
+    let { day, idx } = pendingDelete;
+    let dayRecords = records.filter(r => r.day === day);
+    let recToDelete = dayRecords[idx];
+    records = records.filter(r => r !== recToDelete);
+    saveRecords(records);
+    showHours(day);
+    pendingDelete = null;
+  } else if (pendingDeleteDay) {
+    records = records.filter(r => r.day !== pendingDeleteDay);
+    saveRecords(records);
+    renderDays();
+    pendingDeleteDay = null;
+  } else if (pendingClean) {
+    records = [];
+    saveRecords(records);
+    renderDays();
+    pendingClean = false;
+  } else if (pendingImport) {
+    records = pendingImport;
+    saveRecords(records);
+    renderDays();
+    pendingImport = null;
+  } else if (pendingExportJson) {
+    const data = localStorage.getItem('food_records') || '[]';
+    const blob = new Blob([data], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'comidas_registro.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    pendingExportJson = false;
+  }
+  document.getElementById('modalConfirm').style.display = 'none';
+};
+document.getElementById('confirmNoBtn').onclick = function() {
+  pendingDelete = null;
+  pendingDeleteDay = null;
+  pendingClean = false;
+  pendingImport = null;
+  pendingExportJson = false;
+  document.getElementById('modalConfirm').style.display = 'none';
+};
+
+// --- Inicializar ---
+renderDays();
+  </script>
+</body>
+</html>
