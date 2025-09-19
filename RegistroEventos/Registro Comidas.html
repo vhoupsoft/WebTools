@@ -6,15 +6,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body { font-family: sans-serif; margin: 0; background: #f7f7f7; }
-    #main { max-width: 500px; margin: 0 auto; padding: 16px; }
+    #main {
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 32px);
+      box-sizing: border-box;
+    }
     h1 { text-align: center; }
     .btn { padding: 8px 16px; margin: 4px; border-radius: 6px; border: none; background: #176c2a; color: #fff; font-size: 1em; cursor: pointer; }
     .btn.secondary { background: #888; }
     .btn.export { background: #0a5; }
     .btn.delete { background: #c00; color: #fff; margin-left: 8px; }
     .btn.clean { background: #c00; color: #fff; }
-    .day-list, .hour-list { list-style: none; padding: 0; margin: 0; }
-    .day-list { max-height: 220px; overflow-y: auto; border: 1px solid #ccc; border-radius: 8px; background: #fff; margin-bottom: 12px; }
+    .day-list, .hour-list { list-style: none; padding: 0; margin: 0; }    
+    .day-list { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #ccc; border-radius: 8px; background: #fff; margin-bottom: 12px; }
     .day-list li { background: #fff; margin: 6px 0; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 10px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
     .hour-list li { background: #fff; margin: 6px 0; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 10px; cursor: pointer; font-size: 0.98em; display: flex; align-items: center; justify-content: space-between; }
     .record-detail { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 12px; margin-top: 12px; }
@@ -27,9 +35,8 @@
     .modal-content { background:#fff; border-radius:12px; padding:24px; max-width:90vw; box-shadow:0 4px 24px #0003; }
     .modal-actions { text-align:right; margin-top:12px; }
     @media (max-width: 600px) {
-      #main { padding: 4px; }
+      #main { padding: 4px; height: calc(100vh - 8px); }
       .btn { font-size: 0.95em; }
-      .day-list { max-height: 160px; }
     }
   </style>
 </head>
@@ -37,7 +44,7 @@
   <div id="main">
     <h1>Registro de Comidas y Bebidas</h1>
     <div>
-      <button class="btn" id="addVoiceBtn">Registrar por voz(NO)</button>
+      <button class="btn" id="addVoiceBtn">Registrar por voz</button>
       <button class="btn secondary" id="addManualBtn">Registrar manualmente</button>
       <button class="btn export" id="clipboardBtn">PortaPapeles</button>
       <button class="btn export" id="exportJsonBtn">Exportar</button>
@@ -335,6 +342,165 @@ document.getElementById('addManualBtn').onclick = function() {
   saveRecords(records);
   renderDays();
 };
+
+// --- Registro por voz (Nueva implementación) ---
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let voiceState = { step: 'idle', data: {} };
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition(); // Inicializar aquí dentro
+  recognition.lang = 'es-AR';
+  recognition.interimResults = false;
+  recognition.continuous = false;
+
+  recognition.onresult = (event) => {
+    const lastResult = event.results[event.results.length - 1][0].transcript.trim();
+    processVoiceStep(lastResult);
+  };
+
+  recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error, event.message);
+    let errorMessage = 'Ocurrió un error durante el reconocimiento de voz.';
+    if (event.error === 'no-speech') {
+      errorMessage = 'No se detectó voz. Por favor, intente de nuevo.';
+    } else if (event.error === 'audio-capture') {
+      errorMessage = 'No se pudo acceder al micrófono. Verifique los permisos.';
+    } else if (event.error === 'not-allowed') {
+      errorMessage = 'Permiso para usar el micrófono denegado. Debe permitir el acceso para usar esta función.';
+    }
+    alert(errorMessage);
+    resetVoiceState();
+  };
+
+  recognition.onend = () => {
+    // Se detiene automáticamente, listo para el siguiente `recognition.start()`.
+  };
+}
+
+function speak(text, onEndCallback) {
+  speechSynthesis.cancel(); // Cancela cualquier cosa que se esté diciendo.
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'es-ES';
+  utterance.rate = 1.05;
+  utterance.onend = onEndCallback;
+  speechSynthesis.speak(utterance);
+}
+
+function listen() {
+  try {
+    recognition.start();
+  } catch (e) {
+    // Esto puede pasar si ya está corriendo, lo cual es un estado inválido.
+    console.error("Error al iniciar el reconocimiento:", e);
+    resetVoiceState();
+  }
+}
+
+function resetVoiceState() {
+  voiceState = { step: 'idle', data: {} };
+  if (recognition) recognition.stop();
+}
+
+function advanceVoiceStep(nextStep, prompt) {
+  voiceState.step = nextStep;
+  speak(prompt, () => {
+    // Una vez que termina de hablar, empieza a escuchar.
+    listen();
+  });
+}
+
+function processVoiceStep(result) {
+  switch (voiceState.step) {
+    case 'date':
+      voiceState.data.dateText = result;
+      const dayKeyD = parseVoiceDate(result);
+      if (!dayKeyD) {
+        speak('No entendí la fecha. Por favor, repítala.', listen);
+        return;
+      }
+      voiceState.data.dayKey = dayKeyD;
+      advanceVoiceStep('time', 'Ahora, diga la hora. Por ejemplo: "13 30" o "siete y media".');
+      break;
+
+    case 'time':
+      voiceState.data.timeText = result;
+      const timeStrT = parseVoiceTime(result);
+      if (!timeStrT) {
+        speak('No entendí la hora. Por favor, repítala.', listen);
+        return;
+      }
+      voiceState.data.timeStr = timeStrT;
+      advanceVoiceStep('detail', 'Finalmente, dicte el detalle de la comida o bebida.');
+      break;
+
+    case 'detail':
+      voiceState.data.detailText = result;
+      voiceState.step = 'confirm';
+      const { dayKey, timeStr, detailText } = voiceState.data;
+      const confirmation = confirm(`¿Guardar el siguiente registro?\n\nFecha: ${formatDate(dayKey)}\nHora: ${timeStr}\nDetalle: ${detailText}`);
+      if (confirmation) {
+        let dayRecords = records.filter(r => r.day === dayKey);
+        let order = dayRecords.length;
+        records.push({ day: dayKey, time: timeStr, text: detailText, order: order });
+        saveRecords(records);
+        renderDays();
+        speak('Registro guardado correctamente.', resetVoiceState);
+      } else {
+        speak('Registro cancelado.', resetVoiceState);
+      }
+      break;
+  }
+}
+
+document.getElementById('addVoiceBtn').onclick = function() {
+  if (!SpeechRecognition) {
+    alert('El reconocimiento de voz no es compatible con este navegador.');
+    return;
+  }
+  if (voiceState.step !== 'idle') {
+    resetVoiceState();
+    return;
+  }
+  advanceVoiceStep('date', 'Diga la fecha. Por ejemplo: "hoy", "ayer", o "25 de diciembre".');
+};
+
+function parseVoiceDate(text) {
+  text = text.toLowerCase().trim();
+  let d = new Date();
+  if (text.includes('hoy')) { /* ya es d */ } 
+  else if (text.includes('ayer')) {
+    d.setDate(d.getDate() - 1);
+  } else {
+    const meses = {enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,octubre:9,noviembre:10,diciembre:11};
+    const match = text.match(/(\d{1,2})(?:\s+de\s+)?([a-z]+)/);
+    if (match && meses[match[2]] !== undefined) {
+      d.setDate(parseInt(match[1], 10));
+      d.setMonth(meses[match[2]]);
+    } else {
+      return null;
+    }
+  }
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function parseVoiceTime(text) {
+  text = text.toLowerCase().trim();
+  let match = text.match(/(\d{1,2})\s+(\d{1,2})/);
+  if (match) {
+    return `${String(match[1]).padStart(2,'0')}:${String(match[2]).padStart(2,'0')}`;
+  }
+  match = text.match(/(\d{1,2})\s+y\s+media/);
+  if (match) {
+    return `${String(parseInt(match[1], 10)).padStart(2,'0')}:30`;
+  }
+  match = text.match(/(\d{1,2})\s+y\s+cuarto/);
+  if (match) {
+    return `${String(parseInt(match[1], 10)).padStart(2,'0')}:15`;
+  }
+  // Fallback simple para casos como "13 30" o si el usuario dicta "13 dos puntos 30"
+  return text.replace(/\s/g, ':'); // fallback simple
+}
 
 // --- Eliminar todos los registros de un día ---
 document.getElementById('deleteDayBtn').onclick = function() {
